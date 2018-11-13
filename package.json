@@ -1,0 +1,25 @@
+{
+  "name": "exchange-rate",
+  "version": "1.0.0",
+  "description": "API Exchange rate",
+  "main": "index.js",
+  "dependencies": {
+    "axios": "^0.18.0",
+    "bluebird": "^3.5.3",
+    "decimal.js": "^10.0.1",
+    "express": "^4.16.4",
+    "node-fetch": "^2.2.1",
+    "xml2json": "^0.11.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "keywords": [
+    "exchange",
+    "rate"
+  ],
+  "author": "sang.lxuan@vncdevs.io",
+  "license": "ISC"
+}
