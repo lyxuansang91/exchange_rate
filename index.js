@@ -3,22 +3,13 @@ const parser = require("xml2json");
 const Decimal = require("decimal.js");
 const express = require("express");
 const cors = require("cors");
-const Promise = require("bluebird");
-const port = 3000;
-const host = "0.0.0.0";
+const port = process.env.PORT || 5000;
+const host = process.env.HOST || "0.0.0.0";
 
 Decimal.set({ precision: 8, rounding: 4 });
 
 const config = {
   headers: { "Content-Type": "text/xml" }
-};
-
-const cmc_configs = {
-  headers: { "X-CMC_PRO_API_KEY": "25714388-61d4-46fa-9279-d13e54a54b90" }
-};
-
-const cms_configs_sandbox = {
-  headers: { "X-CMC_PRO_API_KEY": "83440b9b-d5e6-43c6-8a5f-7207e3d47b2b" }
 };
 
 String.prototype.format = function() {
@@ -30,118 +21,71 @@ String.prototype.format = function() {
   return formatted;
 };
 
-const getFiats = async urlExchangeRate => {
+const getFiats = () => {
   return ["USD", "SGD", "EUR", "GBP", "JPY", "VND"];
 };
 
-const getPricesByFiat = async (cmcUrl, currencies, fiat) => {
-  // const id = listing[currency];
-  const currencyQS = currencies.join(",");
-  const url = cmcUrl.format(currencyQS, fiat);
+const getFromCurrencies = () => {
+  return ["BTC", "ETH", "USDT"];
+};
+
+const getToCurrencies = () => {
+  return [
+    "ETH",
+    "BTC",
+    "USDT",
+    "XRP",
+    "NEO",
+    "DOGE",
+    "DASH",
+    "LTC",
+    "XVG",
+    "XMR",
+    "STRAT"
+  ];
+};
+
+const getPriceMulti = async (formatUrl, currencies, fiats) => {
+  const currenciesQS = currencies.join(",");
+  const fiatQS = fiats.join(",");
+  const url = formatUrl.format(currenciesQS, fiatQS);
   let resp = null;
   try {
-    resp = (await axios.get(url, cms_configs_sandbox)).data;
-  } catch (error) {}
-  if (!resp) return null;
-  const { data } = resp;
-  const prices = {};
-  currencies.forEach(currency => {
-    try {
-      const { quote } = data[currency];
-      const { price } = quote[fiat];
-      const pair = `${currency}/${fiat}`;
-      prices[pair] = new Decimal(price).toFixed();
-    } catch (error) {
-      console.log(error);
-    }
+    resp = (await axios.get(url)).data;
+  } catch (error) {
+    resp = null;
+  }
+  const res = {};
+  if (!resp) return res;
+  fiats.forEach(fiat => {
+    res[fiat] = {};
+    currencies.forEach(currency => {
+      const currencyData = resp[currency];
+      if (currencyData && currencyData !== fiat) {
+        res[fiat][`${currency}/${fiat}`] = currencyData[fiat];
+      }
+    });
   });
-
-  // const usdInfo = quotes.USD;
-  return prices;
+  return res;
 };
 
 const getRates = async () => {
-  const currencies = ["BTC", "ETH", "USDT"];
-  const cmcUrl =
-    "http://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol={0}&convert={1}";
+  const fromCurrencies = getFromCurrencies();
+  const toCurrencies = getToCurrencies();
+  const fiats = getFiats();
+  const formatUrl =
+    "https://min-api.cryptocompare.com/data/pricemulti?fsyms={0}&tsyms={1}";
 
-  const fiats = await getFiats(
-    "http://www.vietcombank.com.vn/exchangerates/ExrateXML.aspx"
+  const fiatPrices = await getPriceMulti(formatUrl, fromCurrencies, fiats);
+  const currencyPrices = await getPriceMulti(
+    formatUrl,
+    toCurrencies,
+    fromCurrencies
   );
-  const resp = {};
-  await Promise.each(
-    fiats,
-    async fiat => {
-      const res = await getPricesByFiat(cmcUrl, currencies, fiat);
-      if (res) resp[fiat] = res;
-    },
-    { concurrency: 10 }
-  );
-  return resp;
+  return { ...fiatPrices, ...currencyPrices };
 };
 
-/* http://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=ETH,BTC&quote=USD */
-// {
-//   "status": {
-//       "timestamp": "2018-11-13T08:25:50.805Z",
-//       "error_code": 0,
-//       "error_message": null,
-//       "elapsed": 8,
-//       "credit_count": 1
-//   },
-//   "data": {
-//       "BTC": {
-//           "id": 1,
-//           "name": "Bitcoin",
-//           "symbol": "BTC",
-//           "slug": "bitcoin",
-//           "circulating_supply": 17214587,
-//           "total_supply": 17214587,
-//           "max_supply": 21000000,
-//           "date_added": "2013-04-28T00:00:00.000Z",
-//           "num_market_pairs": 5718,
-//           "cmc_rank": 1,
-//           "last_updated": "2018-08-17T08:55:37.000Z",
-//           "quote": {
-//               "USD": {
-//                   "price": 6493.02288075,
-//                   "volume_24h": 4858871494.40995,
-//                   "percent_change_1h": 0.0196847,
-//                   "percent_change_24h": 1.23932,
-//                   "percent_change_7d": 0.377056,
-//                   "market_cap": 111774707273.6615,
-//                   "last_updated": "2018-08-17T08:55:37.000Z"
-//               }
-//           }
-//       },
-//       "ETH": {
-//           "id": 1027,
-//           "name": "Ethereum",
-//           "symbol": "ETH",
-//           "slug": "ethereum",
-//           "circulating_supply": 101377382.6553,
-//           "total_supply": 101377382.6553,
-//           "max_supply": null,
-//           "date_added": "2015-08-07T00:00:00.000Z",
-//           "num_market_pairs": 3869,
-//           "cmc_rank": 2,
-//           "last_updated": "2018-08-17T08:54:55.000Z",
-//           "quote": {
-//               "USD": {
-//                   "price": 300.96820061,
-//                   "volume_24h": 1689698769.04551,
-//                   "percent_change_1h": -0.200328,
-//                   "percent_change_24h": 3.14457,
-//                   "percent_change_7d": -16.8554,
-//                   "market_cap": 30511368440.317066,
-//                   "last_updated": "2018-08-17T08:54:55.000Z"
-//               }
-//           }
-//       }
-//   }
-// }
-
-// getExchangeRate("http://www.vietcombank.com.vn/exchangerates/ExrateXML.aspx")
+// getRates().then(console.log);
 
 const app = express();
 
