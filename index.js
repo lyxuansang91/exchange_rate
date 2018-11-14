@@ -2,6 +2,7 @@ const axios = require("axios");
 const parser = require("xml2json");
 const Decimal = require("decimal.js");
 const express = require("express");
+const cors = require("cors");
 const Promise = require("bluebird");
 const port = 3000;
 const host = "0.0.0.0";
@@ -30,7 +31,7 @@ String.prototype.format = function() {
 };
 
 const getFiats = async urlExchangeRate => {
-  return ["USD", "SGD", "EUR", "VND"];
+  return ["USD", "SGD", "EUR", "GBP", "JPY", "VND"];
 };
 
 const getPricesByFiat = async (cmcUrl, currencies, fiat) => {
@@ -143,6 +144,8 @@ const getRates = async () => {
 // getExchangeRate("http://www.vietcombank.com.vn/exchangerates/ExrateXML.aspx")
 
 const app = express();
+
+app.use(cors());
 
 app.get("/exchange_rate", (req, res) => {
   getRates()
