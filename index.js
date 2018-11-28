@@ -5,12 +5,9 @@ const express = require("express");
 const cors = require("cors");
 const port = process.env.PORT || 5000;
 const host = process.env.HOST || "0.0.0.0";
+let marketCapResp = {};
 
 Decimal.set({ precision: 8, rounding: 4 });
-
-const config = {
-  headers: { "Content-Type": "text/xml" }
-};
 
 String.prototype.format = function() {
   let formatted = this;
@@ -62,7 +59,9 @@ const getPriceMulti = async (formatUrl, currencies, fiats) => {
     currencies.forEach(currency => {
       const currencyData = resp[currency];
       if (currencyData && currencyData !== fiat) {
-        res[fiat][`${currency}/${fiat}`] = currencyData[fiat];
+        res[fiat][`${currency}/${fiat}`] = new Decimal(
+          currencyData[fiat]
+        ).toFixed();
       }
     });
   });
@@ -85,26 +84,115 @@ const getRates = async () => {
   return { ...fiatPrices, ...currencyPrices };
 };
 
-// getRates().then(console.log);
+const getMarketCap = async () => {
+  const url =
+    "https://pro-api.coinmarketcap.com/v1/global-metrics/quotes/latest";
+  const config = {
+    headers: {
+      "X-CMC_PRO_API_KEY": "25714388-61d4-46fa-9279-d13e54a54b90"
+    }
+  };
+  let resp = null;
+  try {
+    resp = (await axios.get(url, config)).data;
+    console.log(resp);
+  } catch (error) {
+    resp = null;
+  }
+  const { data, status } = resp;
+  if (status.error_code === 0) {
+    return {
+      error_code: status.error_code,
+      btc_dominance: data.btc_dominance,
+      eth_dominance: data.eth_dominance,
+      total_market_cap: data.quote["USD"].total_market_cap || 0,
+      total_volume_24h: data.quote["USD"].total_volume_24h || 0
+    };
+  }
+  // error_code != 0
+  return {
+    error_code: status.error_code,
+    error_message: status.error_message
+  };
+};
 
-const app = express();
-
-app.use(cors());
-
-app.get("/exchange_rate", (req, res) => {
-  getRates()
-    .then(values => {
-      res.status(200);
-      res.json(values);
-    })
-    .catch(error => {
-      res.status(200);
-      res.json({
-        message: error.stack
-      });
+const getMarketCapInterval = () => {
+  console.log("get market cap response");
+  getMarketCap().then(val => {
+    marketCapResp = val;
+  });
+  const interval = setInterval(() => {
+    console.log("get market cap response");
+    getMarketCap().then(val => {
+      marketCapResp = val;
     });
-});
+  }, 2 * 1000 * 60);
+  return interval;
+};
 
-app.listen(port, host, () => {
-  console.log(`exchange rate is listening on ${port}`);
-});
+const startServer = async () => {
+  const app = express();
+  const worker = getMarketCapInterval();
+
+  app.use(cors());
+
+  app.get("/marketcap", (req, res) => {
+    res.status(marketCapResp.error_code === 0 ? 200 : 500);
+    res.json(marketCapResp);
+  });
+
+  app.get("/exchange_rate", (req, res) => {
+    getRates()
+      .then(values => {
+        res.status(200);
+        res.json(values);
+      })
+      .catch(error => {
+        res.status(200);
+        res.json({
+          message: error.stack
+        });
+      });
+  });
+
+  const server = app.listen(port, host, () => {
+    console.log(`exchange rate is listening on ${port}`);
+  });
+
+  return { worker, server };
+};
+
+const shutdown = ({ worker, server }) => {
+  console.log("Received kill signal, shutting down gracefully");
+  if (server) {
+    server.close();
+    console.log("Closed out remaining connections");
+    process.exit(0);
+  }
+
+  // We will wait for 1 minute, after that we force the process to shutdown
+  const forceExit = setTimeout(() => {
+    console.error(
+      "Could not close connections in time, forcefully shutting down"
+    );
+    process.exit(1);
+  }, 60 * 1000);
+
+  // Stop the only worker
+  clearTimeout(forceExit);
+  clearInterval(worker);
+  console.log("Clear interval worker");
+  process.exit(0);
+};
+
+const registerSignals = app => {
+  process.on("SIGTERM", () => shutdown(app));
+  process.on("SIGINT", () => shutdown(app));
+};
+
+startServer()
+  .then(registerSignals)
+  .catch(error => {
+    console.log(error);
+    process.exit(1);
+  });
