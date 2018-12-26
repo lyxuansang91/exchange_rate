@@ -2,7 +2,13 @@ const axios = require("axios");
 const parser = require("xml2json");
 const Decimal = require("decimal.js");
 const express = require("express");
+const debug = require("debug")("debug");
 const cors = require("cors");
+const apicache = require("apicache");
+const expressLogging = require("express-logging");
+logger = require("logops");
+const DURATION = 5 * 1000 * 60;
+
 const port = process.env.PORT || 5000;
 const host = process.env.HOST || "0.0.0.0";
 let marketCapResp = {};
@@ -23,7 +29,7 @@ const getFiats = () => {
 };
 
 const getFromCurrencies = () => {
-  return ["BTC", "ETH", "USDT"];
+  return ["BTC", "ETH", "USDT", "USD"];
 };
 
 const getToCurrencies = () => {
@@ -58,7 +64,7 @@ const getPriceMulti = async (formatUrl, currencies, fiats) => {
     res[fiat] = {};
     currencies.forEach(currency => {
       const currencyData = resp[currency];
-      if (currencyData && currencyData !== fiat) {
+      if (currencyData && currency !== fiat) {
         res[fiat][`${currency}/${fiat}`] = new Decimal(
           currencyData[fiat]
         ).toFixed();
@@ -75,12 +81,22 @@ const getRates = async () => {
   const formatUrl =
     "https://min-api.cryptocompare.com/data/pricemulti?fsyms={0}&tsyms={1}";
 
-  const fiatPrices = await getPriceMulti(formatUrl, fromCurrencies, fiats);
-  const currencyPrices = await getPriceMulti(
+  const fiatPricePromise = await getPriceMulti(
+    formatUrl,
+    fromCurrencies,
+    fiats
+  );
+  const currencyPricePromise = await getPriceMulti(
     formatUrl,
     toCurrencies,
     fromCurrencies
   );
+
+  const [fiatPrices, currencyPrices] = await Promise.all([
+    fiatPricePromise,
+    currencyPricePromise
+  ]);
+
   return { ...fiatPrices, ...currencyPrices };
 };
 
@@ -95,7 +111,7 @@ const getMarketCap = async () => {
   let resp = null;
   try {
     resp = (await axios.get(url, config)).data;
-    console.log(resp);
+    debug(resp);
   } catch (error) {
     resp = null;
   }
@@ -126,12 +142,14 @@ const getMarketCapInterval = () => {
     getMarketCap().then(val => {
       marketCapResp = val;
     });
-  }, 2 * 1000 * 60);
+  }, DURATION);
   return interval;
 };
 
 const startServer = async () => {
   const app = express();
+  const cache = apicache.middleware;
+  app.use(expressLogging(logger));
   const worker = getMarketCapInterval();
 
   app.use(cors());
@@ -141,7 +159,7 @@ const startServer = async () => {
     res.json(marketCapResp);
   });
 
-  app.get("/exchange_rate", (req, res) => {
+  app.get("/exchange_rate", cache("5 minutes"), (req, res) => {
     getRates()
       .then(values => {
         res.status(200);
