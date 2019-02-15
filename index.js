@@ -81,12 +81,8 @@ const getRates = async () => {
   const formatUrl =
     "https://min-api.cryptocompare.com/data/pricemulti?fsyms={0}&tsyms={1}";
 
-  const fiatPricePromise = await getPriceMulti(
-    formatUrl,
-    fromCurrencies,
-    fiats
-  );
-  const currencyPricePromise = await getPriceMulti(
+  const fiatPricePromise = getPriceMulti(formatUrl, fromCurrencies, fiats);
+  const currencyPricePromise = getPriceMulti(
     formatUrl,
     toCurrencies,
     fromCurrencies
@@ -105,13 +101,14 @@ const getMarketCap = async () => {
     "https://pro-api.coinmarketcap.com/v1/global-metrics/quotes/latest";
   const config = {
     headers: {
-      "X-CMC_PRO_API_KEY": "25714388-61d4-46fa-9279-d13e54a54b90"
+      // "X-CMC_PRO_API_KEY": "25714388-61d4-46fa-9279-d13e54a54b90",
+      "X-CMC_PRO_API_KEY": "78fae493-0c57-46ee-a979-94826dc6e80c"
     }
   };
   let resp = null;
   try {
     resp = (await axios.get(url, config)).data;
-    debug(resp);
+    console.log(resp);
   } catch (error) {
     resp = null;
   }
